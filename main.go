@@ -1,11 +1,12 @@
 package main
 
 import (
-	_ "github.com/joho/godotenv/autoload"
-	"github.com/line/line-bot-sdk-go/linebot"
 	"log"
 	"net/http"
 	"os"
+
+	_ "github.com/joho/godotenv/autoload"
+	"github.com/line/line-bot-sdk-go/linebot"
 )
 
 var (
@@ -14,6 +15,10 @@ var (
 )
 
 func main() {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "4000"
+	}
 	// 建立客戶端
 	client, err = linebot.New(os.Getenv("CHANNEL_SECRET"), os.Getenv("CHANNEL_ACCESS_TOKEN"))
 
@@ -23,7 +28,7 @@ func main() {
 
 	http.HandleFunc("/callback", callbackHandler)
 
-	log.Fatal(http.ListenAndServe(":84", nil))
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
 func callbackHandler(w http.ResponseWriter, r *http.Request) {
@@ -43,6 +48,7 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 		if event.Type == linebot.EventTypeMessage {
 			switch message := event.Message.(type) {
 			case *linebot.TextMessage:
+
 				if _, err = client.ReplyMessage(event.ReplyToken, linebot.NewTextMessage(message.Text)).Do(); err != nil {
 					log.Println(err.Error())
 				}
