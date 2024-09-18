@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -41,6 +43,26 @@ func main() {
 
 func callbackHandler(w http.ResponseWriter, r *http.Request) {
 	debugLog("Received callback request")
+	debugLog("HTTP Method: " + r.Method)
+
+	// Log request headers
+	debugLog("Request Headers:")
+	for name, values := range r.Header {
+		for _, value := range values {
+			debugLog(name + ": " + value)
+		}
+	}
+
+	// Log request body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		debugLog("Error reading request body: " + err.Error())
+	} else {
+		debugLog("Request Body: " + string(body))
+	}
+	// Restore the body to be read again
+	r.Body = io.NopCloser(bytes.NewBuffer(body))
+
 	events, err := client.ParseRequest(r)
 
 	if err != nil {
