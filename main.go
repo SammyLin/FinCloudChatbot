@@ -57,39 +57,35 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		debugLog("Error reading request body: " + err.Error())
-	} else {
-		debugLog("Request Body: " + string(body))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
-	// Restore the body to be read again
-	r.Body = io.NopCloser(bytes.NewBuffer(body))
+	debugLog("Request Body: " + string(body))
 
-	events, err := client.ParseRequest(r)
+	// Validate signature
+	events, err := linebot.ParseRequest(
+		os.Getenv("CHANNEL_SECRET"),
+		r,
+		body,
+	)
 
 	if err != nil {
 		if err == linebot.ErrInvalidSignature {
 			debugLog("Invalid signature")
-			w.WriteHeader(400)
+			w.WriteHeader(http.StatusBadRequest)
 		} else {
 			debugLog("Error parsing request: " + err.Error())
-			w.WriteHeader(500)
+			w.WriteHeader(http.StatusInternalServerError)
 		}
 		return
 	}
 
+	// Process events
 	for _, event := range events {
-		if event.Type == linebot.EventTypeMessage {
-			switch message := event.Message.(type) {
-			case *linebot.TextMessage:
-				debugLog("Received text message: " + message.Text)
-				if _, err = client.ReplyMessage(event.ReplyToken, linebot.NewTextMessage(message.Text)).Do(); err != nil {
-					log.Println(err.Error())
-					debugLog("Error replying to message: " + err.Error())
-				} else {
-					debugLog("Message replied successfully")
-				}
-			}
-		}
+		// Handle events...
 	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func debugLog(message string) {
