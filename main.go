@@ -28,11 +28,18 @@ func main() {
 	debugLog("Using port: " + port)
 
 	// Create LINE bot client
-	client, err = linebot.New(os.Getenv("CHANNEL_SECRET"), os.Getenv("CHANNEL_ACCESS_TOKEN"))
-	if err != nil {
-		log.Println(err.Error())
-	}
-	debugLog("LINE Bot client created")
+    channelSecret := os.Getenv("CHANNEL_SECRET")
+    channelToken := os.Getenv("CHANNEL_ACCESS_TOKEN")
+
+    if channelSecret == "" || channelToken == "" {
+        log.Fatal("CHANNEL_SECRET or CHANNEL_ACCESS_TOKEN is not set")
+    }
+
+    client, err = linebot.New(channelSecret, channelToken)
+    if err != nil {
+        log.Fatal(err)
+    }
+    debugLog("LINE Bot client created")
 
 	http.HandleFunc("/callback", callbackHandler)
 	debugLog("Callback handler set")
@@ -88,18 +95,25 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleEvent(event *linebot.Event) error {
-	// 在這裡處理事件
-	switch event.Type {
-	case linebot.EventTypeMessage:
-		switch message := event.Message.(type) {
-		case *linebot.TextMessage:
-			debugLog("Received text message: " + message.Text)
-			if _, err := client.ReplyMessage(event.ReplyToken, linebot.NewTextMessage(message.Text)).Do(); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+    switch event.Type {
+    case linebot.EventTypeMessage:
+        switch message := event.Message.(type) {
+        case *linebot.TextMessage:
+            debugLog("Received text message: " + message.Text)
+            response := linebot.NewTextMessage(message.Text)
+            _, err := client.ReplyMessage(event.ReplyToken, response).Do()
+            if err != nil {
+                debugLog("Error sending reply: " + err.Error())
+                return err
+            }
+            debugLog("Reply sent successfully")
+        default:
+            debugLog("Received message of type: " + string(message.Type()))
+        }
+    default:
+        debugLog("Received event of type: " + string(event.Type))
+    }
+    return nil
 }
 
 func debugLog(message string) {
