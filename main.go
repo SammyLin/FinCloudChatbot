@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"io"
 	"log"
 	"net/http"
@@ -9,7 +8,7 @@ import (
 	"strconv"
 
 	_ "github.com/joho/godotenv/autoload"
-	"github.com/line/line-bot-sdk-go/linebot"
+	"github.com/line/line-bot-sdk-go/v7/linebot"
 )
 
 var (
@@ -63,11 +62,7 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 	debugLog("Request Body: " + string(body))
 
 	// Validate signature
-	events, err := linebot.ParseRequest(
-		os.Getenv("CHANNEL_SECRET"),
-		r,
-		body,
-	)
+	events, err := client.ParseRequest(r)
 
 	if err != nil {
 		if err == linebot.ErrInvalidSignature {
@@ -82,10 +77,29 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Process events
 	for _, event := range events {
-		// Handle events...
+		if err := handleEvent(event); err != nil {
+			debugLog("Error handling event: " + err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func handleEvent(event *linebot.Event) error {
+	// 在這裡處理事件
+	switch event.Type {
+	case linebot.EventTypeMessage:
+		switch message := event.Message.(type) {
+		case *linebot.TextMessage:
+			debugLog("Received text message: " + message.Text)
+			if _, err := client.ReplyMessage(event.ReplyToken, linebot.NewTextMessage(message.Text)).Do(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func debugLog(message string) {
