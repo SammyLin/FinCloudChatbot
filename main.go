@@ -1,119 +1,89 @@
 package main
 
 import (
-	"io"
+	"errors"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
-
-	_ "github.com/joho/godotenv/autoload"
-	"github.com/line/line-bot-sdk-go/v7/linebot"
+	
+  _ "github.com/joho/godotenv/autoload"
+	"github.com/line/line-bot-sdk-go/v8/linebot/messaging_api"
+	"github.com/line/line-bot-sdk-go/v8/linebot/webhook"
 )
 
 var (
-	client *linebot.Client
-	err    error
-	debug  bool
+	bot   *messaging_api.MessagingApiAPI
+	debug bool
 )
 
 func main() {
-	// Initialize debug mode
 	debug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
+	var err error
+	bot, err = messaging_api.NewMessagingApiAPI(
+		os.Getenv("CHANNEL_ACCESS_TOKEN"),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	http.HandleFunc("/callback", callbackHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "4000"
 	}
-	debugLog("Using port: " + port)
-
-	// Create LINE bot client
-    channelSecret := os.Getenv("CHANNEL_SECRET")
-    channelToken := os.Getenv("CHANNEL_ACCESS_TOKEN")
-
-    if channelSecret == "" || channelToken == "" {
-        log.Fatal("CHANNEL_SECRET or CHANNEL_ACCESS_TOKEN is not set")
-    }
-
-    client, err = linebot.New(channelSecret, channelToken)
-    if err != nil {
-        log.Fatal(err)
-    }
-    debugLog("LINE Bot client created")
-
-	http.HandleFunc("/callback", callbackHandler)
-	debugLog("Callback handler set")
-
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	debugLog("Starting server on port " + port)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatal(err)
+	}
 }
 
-func callbackHandler(w http.ResponseWriter, r *http.Request) {
+func callbackHandler(w http.ResponseWriter, req *http.Request) {
 	debugLog("Received callback request")
-	debugLog("HTTP Method: " + r.Method)
-
-	// Log request headers
-	debugLog("Request Headers:")
-	for name, values := range r.Header {
-		for _, value := range values {
-			debugLog(name + ": " + value)
-		}
-	}
-
-	// Log request body
-	body, err := io.ReadAll(r.Body)
+	cb, err := webhook.ParseRequest(os.Getenv("CHANNEL_SECRET"), req)
 	if err != nil {
-		debugLog("Error reading request body: " + err.Error())
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	debugLog("Request Body: " + string(body))
-
-	// Validate signature
-	events, err := client.ParseRequest(r)
-
-	if err != nil {
-		if err == linebot.ErrInvalidSignature {
-			debugLog("Invalid signature")
-			w.WriteHeader(http.StatusBadRequest)
+		debugLog("Error parsing request: " + err.Error())
+		if errors.Is(err, webhook.ErrInvalidSignature) {
+			w.WriteHeader(400)
 		} else {
-			debugLog("Error parsing request: " + err.Error())
-			w.WriteHeader(http.StatusInternalServerError)
+			w.WriteHeader(500)
 		}
 		return
 	}
 
-	// Process events
-	for _, event := range events {
-		if err := handleEvent(event); err != nil {
-			debugLog("Error handling event: " + err.Error())
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+	for _, event := range cb.Events {
+		debugLog("Handling event: " + string(event.GetType()))
+		switch e := event.(type) {
+		case webhook.MessageEvent:
+			handleMessageEvent(e)
+		default:
+			debugLog("Unsupported event type: " + string(event.GetType()))
 		}
 	}
-
-	w.WriteHeader(http.StatusOK)
 }
 
-func handleEvent(event *linebot.Event) error {
-    switch event.Type {
-    case linebot.EventTypeMessage:
-        switch message := event.Message.(type) {
-        case *linebot.TextMessage:
-            debugLog("Received text message: " + message.Text)
-            response := linebot.NewTextMessage(message.Text)
-            _, err := client.ReplyMessage(event.ReplyToken, response).Do()
-            if err != nil {
-                debugLog("Error sending reply: " + err.Error())
-                return err
-            }
-            debugLog("Reply sent successfully")
-        default:
-            debugLog("Received message of type: " + string(message.Type()))
-        }
-    default:
-        debugLog("Received event of type: " + string(event.Type))
-    }
-    return nil
+func handleMessageEvent(event webhook.MessageEvent) {
+	switch message := event.Message.(type) {
+	case webhook.TextMessageContent:
+		debugLog("Received text message: " + message.Text)
+		if _, err := bot.ReplyMessage(
+			&messaging_api.ReplyMessageRequest{
+				ReplyToken: event.ReplyToken,
+				Messages: []messaging_api.MessageInterface{
+					messaging_api.TextMessage{
+						Text: message.Text,
+					},
+				},
+			},
+		); err != nil {
+			debugLog("Error replying to message: " + err.Error())
+		} else {
+			debugLog("Sent text reply")
+		}
+	default:
+		debugLog("Unsupported message content: " + string(event.Message.GetType()))
+	}
 }
 
 func debugLog(message string) {
