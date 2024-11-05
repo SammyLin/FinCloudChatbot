@@ -20,7 +20,7 @@ var (
 	debugLogging bool
 )
 
-// 定義每個回調的配置結構
+// CallbackConfig defines the configuration for each callback
 type CallbackConfig struct {
 	Type                 string `json:"Type"`
 	API_AUTH_TOKEN       string `json:"API_AUTH_TOKEN,omitempty"`
@@ -29,15 +29,23 @@ type CallbackConfig struct {
 	CHANNEL_ACCESS_TOKEN string `json:"CHANNEL_ACCESS_TOKEN"`
 }
 
-// 定義包含多個回調配置的映射
+// Configurations maps callback names to their configurations
 type Configurations map[string]CallbackConfig
 
 func main() {
-	// 設置日誌輸出
+	// Conditionally load .env only if not in production
+	if os.Getenv("ENV") != "production" {
+		err := godotenv.Load()
+		if err != nil {
+			log.Println("Error loading .env file:", err)
+		}
+	}
+
+	// Set up logging
 	log.SetOutput(os.Stdout)
 	log.Println("Program started")
 
-	// 加載調試模式
+	// Load debug mode
 	debugLogging, _ = strconv.ParseBool(os.Getenv("DEBUG_LOGGING"))
 	if debugLogging {
 		log.Println("Debug logging is enabled")
@@ -45,14 +53,14 @@ func main() {
 		log.SetOutput(ioutil.Discard)
 	}
 
-	// 加載配置
+	// Load configurations
 	configs, err := loadConfigurations()
 	if err != nil {
 		log.Fatalf("Failed to load configurations: %v", err)
 	}
 	log.Printf("Loaded %d callback configurations", len(configs))
 
-	// 遍歷每個回調配置並註冊處理程序
+	// Register handlers for each callback
 	for name, config := range configs {
 		handler := createCallbackHandler(config, name)
 		path := fmt.Sprintf("/%s/callback", name)
@@ -73,20 +81,14 @@ func main() {
 }
 
 func loadConfigurations() (Configurations, error) {
-	// 加載 .env 文件
-	err := godotenv.Load()
-	if err != nil {
-		return nil, fmt.Errorf("error loading .env file: %v", err)
-	}
-
-	// 回調配置存儲在 CALLBACK_CONFIGS 中，以 JSON 格式
+	// Load configurations from CALLBACK_CONFIGS environment variable
 	configsJSON := os.Getenv("CALLBACK_CONFIGS")
 	if configsJSON == "" {
 		return nil, errors.New("CALLBACK_CONFIGS is not set in the environment")
 	}
 
 	var configs Configurations
-	err = json.Unmarshal([]byte(configsJSON), &configs)
+	err := json.Unmarshal([]byte(configsJSON), &configs)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing CALLBACK_CONFIGS: %v", err)
 	}
@@ -95,7 +97,7 @@ func loadConfigurations() (Configurations, error) {
 }
 
 func createCallbackHandler(config CallbackConfig, name string) http.HandlerFunc {
-	// 初始化 Messaging API 客戶端
+	// Initialize Messaging API client
 	bot, err := messaging_api.NewMessagingApiAPI(config.CHANNEL_ACCESS_TOKEN)
 	if err != nil {
 		log.Fatalf("Failed to initialize Messaging API for %s: %v", name, err)
@@ -132,17 +134,17 @@ func handleMessageEvent(event webhook.MessageEvent, bot *messaging_api.Messaging
 	case webhook.TextMessageContent:
 		debugLog("Received text message: %s for %s", message.Text, name)
 
-		// 根據回調類型執行不同的操作
+		// Execute actions based on callback type
 		switch config.Type {
 		case "bypass":
-			// 調用 API 並獲取回應
+			// Call API and get response
 			response, err := queryAPI(config.API_URL, config.API_AUTH_TOKEN, message.Text)
 			if err != nil {
 				debugLog("Error querying API for %s: %v", name, err)
 				sendReply(bot, event.ReplyToken, "Sorry, I encountered an error processing your request.", name)
 				return
 			}
-			// 檢查回應是否為空
+			// Check if response is empty
 			if response == "" {
 				debugLog("Empty response from API for %s", name)
 				sendReply(bot, event.ReplyToken, "Sorry, I couldn't generate a response.", name)
@@ -150,7 +152,7 @@ func handleMessageEvent(event webhook.MessageEvent, bot *messaging_api.Messaging
 			}
 			sendReply(bot, event.ReplyToken, response, name)
 		case "periodicsummary":
-			// 執行定期摘要的相關操作
+			// Execute periodic summary actions
 			summary := "This is a periodic summary."
 			sendReply(bot, event.ReplyToken, summary, name)
 		default:
@@ -161,9 +163,9 @@ func handleMessageEvent(event webhook.MessageEvent, bot *messaging_api.Messaging
 	}
 }
 
-// 添加 queryAPI 函數
+// queryAPI calls the external API with the user's message
 func queryAPI(apiURL string, authToken string, message string) (string, error) {
-	// 準備請求數據
+	// Prepare request data
 	requestBody, err := json.Marshal(map[string]string{
 		"question": message,
 	})
@@ -171,17 +173,17 @@ func queryAPI(apiURL string, authToken string, message string) (string, error) {
 		return "", fmt.Errorf("error marshaling request: %v", err)
 	}
 
-	// 創建請求
+	// Create request
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return "", fmt.Errorf("error creating request: %v", err)
 	}
 
-	// 設置請求頭
+	// Set request headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", authToken)
 
-	// 發送請求
+	// Send request
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -189,13 +191,13 @@ func queryAPI(apiURL string, authToken string, message string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	// 檢查狀態碼
+	// Check status code
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		return "", fmt.Errorf("API returned status code %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	// 讀取響應
+	// Read response
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("error reading response: %v", err)
@@ -203,7 +205,7 @@ func queryAPI(apiURL string, authToken string, message string) (string, error) {
 
 	debugLog("API Response: %s", string(body))
 
-	// 解析響應
+	// Parse response
 	var result struct {
 		Text string `json:"text"`
 	}
@@ -211,7 +213,7 @@ func queryAPI(apiURL string, authToken string, message string) (string, error) {
 		return "", fmt.Errorf("error parsing response: %v, body: %s", err, string(body))
 	}
 
-	// 檢查 Text 是否為空
+	// Check if Text is empty
 	if result.Text == "" {
 		return "", fmt.Errorf("empty text in API response")
 	}
@@ -219,6 +221,7 @@ func queryAPI(apiURL string, authToken string, message string) (string, error) {
 	return result.Text, nil
 }
 
+// sendReply sends a reply message back to the user
 func sendReply(bot *messaging_api.MessagingApiAPI, replyToken string, text string, name string) {
 	_, err := bot.ReplyMessage(
 		&messaging_api.ReplyMessageRequest{
@@ -237,6 +240,7 @@ func sendReply(bot *messaging_api.MessagingApiAPI, replyToken string, text strin
 	}
 }
 
+// debugLog logs messages if debugLogging is enabled
 func debugLog(format string, v ...interface{}) {
 	if debugLogging {
 		log.Printf(format, v...)
