@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/line/line-bot-sdk-go/v8/linebot/messaging_api"
@@ -137,6 +138,12 @@ func handleMessageEvent(event webhook.MessageEvent, bot *messaging_api.Messaging
 		// Execute actions based on callback type
 		switch config.Type {
 		case "bypass":
+			// Only process messages that start with "/"
+			if !strings.HasPrefix(message.Text, "/") {
+				debugLog("Message doesn't start with '/' for bypass type, ignoring: %s", message.Text)
+				return
+			}
+			
 			// Call API and get response
 			response, err := queryAPI(config.API_URL, config.API_AUTH_TOKEN, message.Text)
 			if err != nil {
